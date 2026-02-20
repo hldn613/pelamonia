@@ -1068,7 +1068,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
 // Klik berurutan Tanggal Masuk berdasarkan daftar No. SEP
 (function () {
     'use strict';
-    var allowedPrefix = 'http://192.168.108.105/E-Klaim/index.php?0';
+    var allowedPrefix = 'http://192.168.108.105/E-Klaim/index.php?';
     if (!window.location.href.startsWith(allowedPrefix)) {
         return;
     }
@@ -1935,5 +1935,6 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
 
     runWhenPageFullyLoaded(init);
 })();
+
 
 
