@@ -1046,7 +1046,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
             return sepFromQuery;
         }
 
-        var sepInput = document.getElementById('nosep') || document.querySelector('input[name="nosep"], input[name="sep"], #sep');
+        var sepInput = document.getElementById('no_sep') || document.querySelector('input[name="nosep"], input[name="sep"], #sep');
         if (sepInput && sepInput.value) {
             return sanitizeFilePart(sepInput.value);
         }
