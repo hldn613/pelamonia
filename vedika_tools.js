@@ -1,3 +1,4 @@
+
 var VEDIKA_LICENSE_CONFIG = {
   STORAGE_KEY: 'vedikaToolsLicenseValid',
   VERIFY_ENDPOINT: '',
@@ -49,8 +50,14 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
       '<label style="display:block;margin-top:12px;font-size:12px;font-weight:600;color:#374151;">Daftar No.RM</label>' +
       '<textarea id="noRMInput" rows="6" placeholder="Contoh: 763953, 123456" style="width:100%;box-sizing:border-box;margin-top:6px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;"></textarea>' +
       '<div style="margin-top:6px;font-size:11px;color:#6b7280;">Pisahkan dengan koma, spasi, atau baris baru.</div>' +
+      '<label style="display:block;margin-top:10px;font-size:12px;font-weight:600;color:#374151;">Opsi Download</label>' +
+      '<select id="downloadModeSelect" style="width:100%;box-sizing:border-box;margin-top:6px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;background:#ffffff;color:#111827;">' +
+        '<option value="all">Semua (Billing + Berkas)</option>' +
+        '<option value="billing_only">Hanya Billing</option>' +
+        '<option value="berkas_only">Hanya Berkas</option>' +
+      '</select>' +
       '<div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px;">' +
-      '<button id="btnDownloadAll" type="button" style="padding:9px 10px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Download (Billing + Berkas)</button>' +
+      '<button id="btnDownloadAll" type="button" style="padding:9px 10px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Mulai Download</button>' +
       '</div>' +
       '<div style="margin-top:14px;padding:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">' +
         '<div style="margin-bottom:6px;font-size:12px;font-weight:600;color:#374151;">Progress</div>' +
@@ -110,6 +117,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
   }
 
   var downloadAllBtn = document.getElementById('btnDownloadAll');
+  var downloadModeSelect = document.getElementById('downloadModeSelect');
   var togglePanelBtn = document.getElementById('toggleVedikaPanel');
   var stopProcessBtn = document.getElementById('btnStopProcess');
   var pauseProcessBtn = document.getElementById('btnPauseProcess');
@@ -139,10 +147,35 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
   var pauseResolvers = [];
   var lastProgressStatusText = '';
   var statusBeforePause = '';
+  var selectedDownloadMode = 'all';
 
   function setActionButtonsDisabled(disabled) {
     downloadAllBtn.disabled = disabled;
+    if (downloadModeSelect) {
+      downloadModeSelect.disabled = disabled;
+    }
     updatePauseResumeButtons();
+  }
+
+  function getSelectedDownloadMode() {
+    if (!downloadModeSelect) {
+      return 'all';
+    }
+    var mode = String(downloadModeSelect.value || 'all');
+    if (mode !== 'all' && mode !== 'billing_only' && mode !== 'berkas_only') {
+      return 'all';
+    }
+    return mode;
+  }
+
+  function getDownloadModeText(mode) {
+    if (mode === 'billing_only') {
+      return 'hanya billing';
+    }
+    if (mode === 'berkas_only') {
+      return 'hanya berkas';
+    }
+    return 'billing + berkas';
   }
 
   function updatePauseResumeButtons() {
@@ -203,14 +236,57 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
     };
   }
 
+  function collectFailedNoRMByType(mode) {
+    var relevant = processLogs.filter(function (x) {
+      return x.mode === mode && (x.status === 'failed' || x.status === 'not_found');
+    });
+    var seenBilling = {};
+    var seenBerkasNotFound = {};
+    var failedBilling = [];
+    var berkasNotFound = [];
+
+    for (var i = 0; i < relevant.length; i++) {
+      var row = relevant[i];
+      var value = String(row.noRM || row.input || '').trim();
+      if (!value) {
+        continue;
+      }
+
+      var message = String(row.message || '').toLowerCase();
+      var fileName = String(row.fileName || '').toLowerCase();
+      var isBillingFailed = row.status === 'failed' && (message.indexOf('billing') >= 0 || fileName.indexOf('_billing.pdf') >= 0);
+      var isBerkasNotFound = row.status === 'not_found' && message.indexOf('berkas') >= 0;
+
+      if (isBillingFailed && !seenBilling[value]) {
+        seenBilling[value] = true;
+        failedBilling.push(value);
+      }
+
+      if (isBerkasNotFound && !seenBerkasNotFound[value]) {
+        seenBerkasNotFound[value] = true;
+        berkasNotFound.push(value);
+      }
+    }
+
+    return {
+      failedBilling: failedBilling,
+      berkasNotFound: berkasNotFound
+    };
+  }
+
   function renderSummary(mode) {
     var summary = summarizeLogs(mode);
+    var failedByType = collectFailedNoRMByType(mode);
+    var failedBillingText = failedByType.failedBilling.length ? failedByType.failedBilling.join(', ') : '-';
+    var berkasNotFoundText = failedByType.berkasNotFound.length ? failedByType.berkasNotFound.join(', ') : '-';
     updateSummaryText(
       'Ringkasan ' + mode + '\n' +
       'Berhasil: ' + summary.success + '\n' +
       'Gagal: ' + summary.failed + '\n' +
       'Tidak ditemukan: ' + summary.notFound + '\n' +
-      'Dibatalkan: ' + summary.cancelled
+      'Dibatalkan: ' + summary.cancelled + '\n' +
+      'No.RM gagal billing: ' + failedBillingText + '\n' +
+      'No.RM berkas tidak ditemukan: ' + berkasNotFoundText
     );
   }
 
@@ -309,7 +385,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
     adaptiveDelayMs = 1200;
     updateProgress(0, 0);
     updateSummaryText('');
-    updateProgressStatus('Memulai proses ' + mode + '...');
+    updateProgressStatus('Memulai proses ' + mode + ' (' + getDownloadModeText(selectedDownloadMode) + ')...');
     setActionButtonsDisabled(true);
     return true;
   }
@@ -608,7 +684,9 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
       processNextCombined();
       return;
     }
-    await downloadDigitalFromContext(currentCombinedContext);
+    if (selectedDownloadMode !== 'billing_only') {
+      await downloadDigitalFromContext(currentCombinedContext);
+    }
     if (stopRequested) {
       finishProcess('combined', 'Proses download dihentikan.');
       return;
@@ -630,7 +708,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
     }
     if (combinedIndex >= combinedQueue.length) {
       updateProgress(combinedQueue.length, combinedQueue.length);
-      finishProcess('combined', 'Selesai download billing + berkas.');
+      finishProcess('combined', 'Selesai download ' + getDownloadModeText(selectedDownloadMode) + '.');
       return;
     }
 
@@ -656,6 +734,18 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
       noKunjungan: noKunjungan,
       row: foundRow
     };
+
+    if (selectedDownloadMode === 'berkas_only') {
+      await downloadDigitalFromContext(currentCombinedContext);
+      if (stopRequested) {
+        finishProcess('combined', 'Proses download dihentikan.');
+        return;
+      }
+      currentCombinedContext = null;
+      combinedIndex += 1;
+      setTimeout(processNextCombined, Math.min(2500, adaptiveDelayMs + 300));
+      return;
+    }
 
     if (!billingLink) {
       addLog({ mode: 'combined', input: inputIdentifier, noRM: noRM, noKunjungan: noKunjungan, status: 'failed', fileName: fileNameBilling(noRM, noKunjungan), message: 'Link billing tidak ditemukan' });
@@ -743,6 +833,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
     if (!identifierList || identifierList.length === 0) {
       return;
     }
+    selectedDownloadMode = getSelectedDownloadMode();
     if (!startProcess('combined')) {
       return;
     }
@@ -1457,6 +1548,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
             '<div id="sepRunnerText" style="margin-top:6px;font-size:12px;color:#4b5563;">0 / 0 (0%)</div>' +
             '<div id="sepRunnerActive" style="margin-top:4px;font-size:11px;color:#374151;min-height:16px;">SEP aktif: -</div>' +
             '<div id="sepRunnerStatus" style="margin-top:4px;font-size:11px;color:#6b7280;min-height:16px;"></div>' +
+            '<div id="sepRunnerFailed" style="margin-top:6px;font-size:11px;color:#b91c1c;white-space:pre-line;min-height:16px;">SEP gagal: -</div>' +
             '</div>' +
             '</div>';
 
@@ -1681,6 +1773,15 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
         }
     }
 
+    function updateFailedSEPList(sepList) {
+      var failed = document.getElementById('sepRunnerFailed');
+      if (!failed) {
+        return;
+      }
+      var values = Array.isArray(sepList) ? sepList : [];
+      failed.textContent = values.length ? ('SEP gagal:\n' + values.join(', ')) : 'SEP gagal: -';
+    }
+
     function updateActiveSEP(sepValue, state) {
         var active = document.getElementById('sepRunnerActive');
         if (active) {
@@ -1751,9 +1852,23 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
         setButtonsRunning(true);
         updateProgress(0, sepList.length);
         updateActiveSEP('-', 'idle');
+        updateFailedSEPList([]);
 
         var openedCount = 0;
         var doneCount = 0;
+        var failedSEPs = [];
+
+        function markFailedSEP(sepValue) {
+            var normalized = String(sepValue || '').trim();
+            if (!normalized) {
+                return;
+            }
+            if (failedSEPs.indexOf(normalized) >= 0) {
+                return;
+            }
+            failedSEPs.push(normalized);
+            updateFailedSEPList(failedSEPs);
+        }
 
         for (var i = 0; i < sepList.length; i++) {
             if (stopRequested) {
@@ -1776,6 +1891,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
             if (!dateCell) {
                 updateActiveSEP(sep, 'error');
                 updateStatus('SEP tidak ditemukan: ' + sep);
+                markFailedSEP(sep);
                 continue;
             }
 
@@ -1783,6 +1899,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
             if (!detailUrl) {
                 updateActiveSEP(sep, 'error');
                 updateStatus('Link detail tidak ditemukan untuk SEP: ' + sep);
+                markFailedSEP(sep);
                 continue;
             }
 
@@ -1799,6 +1916,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
                 clearPendingRequest(requestId);
                 updateActiveSEP(sep, 'error');
                 updateStatus('Gagal membuka tab detail untuk SEP: ' + sep);
+                markFailedSEP(sep);
                 continue;
             }
 
@@ -1817,6 +1935,7 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
                 updateActiveSEP(sep, 'done');
             } else {
                 updateActiveSEP(sep, 'error');
+              markFailedSEP(sep);
             }
             updateStatus('Selesai SEP: ' + sep + ' (' + ackStatus + ').');
         }
@@ -1935,7 +2054,5 @@ if (window.location.href.startsWith('https://vedika.rsad-pelamonia.id/webapps/be
 
     runWhenPageFullyLoaded(init);
 })();
-
-
 
 
